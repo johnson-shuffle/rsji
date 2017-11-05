@@ -6,8 +6,8 @@ library(rstan)
 load_tidy()
 
 # databases
-db <- src_sqlite('./rsji/rsji.sqlite', create = F)
-db_gis <- './rsji/rsji_gis.sqlite'
+db <- src_sqlite('rsji.sqlite', create = F)
+db_gis <- 'rsji_gis.sqlite'
 
 # stan options
 rstan_options(auto_write = TRUE)
@@ -72,9 +72,6 @@ ggplot(mibr) +
     ) +
   facet_wrap(~sector, nrow = 6, ncol = 3)
 
-# ------------------------------------------------------------------------------
-# glm - poission regression
-# ------------------------------------------------------------------------------
 dat <- left_join(terry, mibr, by = c('year(dt)', 'sector', 'subjectrace'))
 dat %<>%
   group_by(sector, subjectrace) %>%
@@ -82,8 +79,11 @@ dat %<>%
     n.yl = lag(n.y, order_by = `year(dt)`),
     N.yl = lag(N.y, order_by = `year(dt)`),
     p.yl = lag(p.y, order_by = `year(dt)`)
-    )
+  )
 
+# ------------------------------------------------------------------------------
+# glm - poission regression
+# ------------------------------------------------------------------------------
 reg1 <- glm(
   n.x ~ 1,
   offset = log(n.yl),
@@ -113,9 +113,10 @@ summary(reg3)
 # ------------------------------------------------------------------------------
 inits <- function(chain) {
   set.seed(10 ^ chain)
-  list(
+  
+  # model a
+  x <- list(
     mu = rnorm(1, 0, 1),
-    tau = rnorm(1, 0, 1),
     alpha_raw = rnorm(4, 0, 1),
     beta_raw  = rnorm(17, 0, 1),
     epsilon_raw = rnorm(17 * 4, 0, 1),
@@ -123,29 +124,47 @@ inits <- function(chain) {
     sigma_b = abs(rnorm(1, 0, 1)),
     sigma_e = abs(rnorm(1, 0, 1))
   )
+  
+  # model b
+  x <- append(x, list(
+    tau = rnorm(1, 0, 1)
+  ))
+  
+  # model c / d
+  x <- append(x, list(
+    l2_alpha_raw = rnorm(4, 0, 1),
+    l2_beta_raw  = rnorm(17, 0, 1),
+    l2_epsilon_raw = rnorm(17 * 4, 0, 1),
+    l2_sigma_a = abs(rnorm(1, 0, 1)),
+    l2_sigma_b = abs(rnorm(1, 0, 1)),
+    l2_sigma_e = abs(rnorm(1, 0, 1))
+  ))
+  
+  return(x)
 }
 
 z <- filter(dat, `year(dt)` == 2016 & subjectrace != 'H')
 
 fit <- stan(
-  file = './rsji/analysis/poisson.stan',
+  file = 'analysis/models/poisson_d.stan',
   data = list(
     S = 17,
     R = 4,
     N = 17 * 4,
     y = z$n.x,
     b = z$n.yl,
+    p = round(runif(17 * 4, 1.5, 3) * z$n.yl),
     yS = as.numeric(factor(z$sector)),
     yR = as.numeric(factor(z$subjectrace))
   ),
   iter = 2000,
   chains = 4,
   init = map(1:4, inits),
-  pars = c('mu_adj', 'alpha_adj', 'beta', 'tau', 'sigma_a', 'sigma_b', 'sigma_e'),
+  pars = c('mu_adj', 'alpha_adj', 'beta', 'sigma_a', 'sigma_b', 'sigma_e'),
   seed = 314159,
   control = list(
     adapt_delta = 0.99,
-    max_treedepth = 10
+    max_treedepth = 11
   )
 )
 print(fit)

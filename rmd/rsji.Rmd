@@ -1,0 +1,631 @@
+---
+title: 'RSJI: Racial and Social Justice Initiative'
+author: "Jake Johnson"
+date: "10/23/2017"
+output:
+  bookdown::html_document2: default
+  bookdown::pdf_document2: default
+header-includes:
+- \usepackage{tikz}
+- \usepackage{pgfplots}
+---
+
+```{r setup, echo = F, message = F, warning = F}
+options(
+  knitr.kable.NA = ''
+)
+knitr::opts_knit$set(
+  root.dir = rprojroot::find_rstudio_root_file()
+)
+knitr::opts_chunk$set(
+  cache.path = 'cache/',
+  fig.path = 'figures/',
+  echo = F,
+  cache = T,
+  message = F,
+  warning = F
+)
+library(rgdal)
+library(rgeos)
+library(ggthemes)
+library(rstan)
+load_tidy()
+```
+
+```{r sqlite, cache = F, echo = F, cache = F}
+db <- src_sqlite('rsji.sqlite', create = F)
+db_gis <- 'rsji_gis.sqlite'
+walk(list.files('rmd/fun', full.names = T), source)
+```
+
+```{r data, echo = F}
+
+# sqlite tables
+sibr <- tbl(db, 'sibr') %>% collect()
+mibr <- tbl(db, 'mibr') %>% collect()
+terr <- tbl(db, 'terry') %>% collect()
+sect <- tbl(db, 'sectors') %>% collect()
+
+# spatialite maps
+spd <- readOGR(db_gis, 'beats', verbose = F)
+spd@data$sector <- str_sub(spd@data$beat, 1, 1)
+spd <- spTransform(spd, '+init=epsg:4326')
+
+# pre-fortify
+spd_f <- fortify(spd, region = 'sector') %>% filter(!id %in% c('9', 'H'))
+cfr <- (spd@bbox[1, 2] - spd@bbox[1, 1]) / (spd@bbox[2, 2] - spd@bbox[2, 1])
+cfr <- 1 / cfr
+```
+
+<!--#########################################################################-->
+# Data
+<!--#########################################################################-->
+
+## Seattle Incident-Based Reporting
+
+Below are maps which show the spatial locations of all SPD incidents in 2016 for which data is available.  The full data set is available [here](https://data.seattle.gov/Public-Safety/Seattle-Police-Department-Police-Report-Incident/7ais-f98f).  Each map corresponds to one of the Uniform Crime Reporting (UCR)'s 12 categories while the colored areas delineate one of SPD's 17 police sectors.
+
+```{r sibr, fig.height = 9, fig.width = 9}
+x <- spd_f
+y <- sibr %>%
+  filter(year == 2016) %>%
+  filter(!is.na(ucr_cat)) %>%
+  filter(longitude >= min(x$long) & longitude <= max(x$long)) %>%
+  filter(latitude >= min(x$lat) & latitude <= max(x$lat))
+
+p <- ggplot() +
+  geom_polygon(
+    aes(long, lat, group = group, fill = id, colour = id),
+    data = x,
+    alpha = 0.25
+    ) +
+  geom_point(
+    aes(longitude, latitude, colour = ucr_cat),
+    data = y,
+    size = 0.75,
+    alpha = 0.35
+    ) +
+  coord_fixed(cfr) +
+  theme_map() +
+  theme(legend.position = 'none') +
+  facet_wrap(~ucr_cat)
+p
+```
+
+## National Incident-Based Reporting
+
+Unfortunately, the data presented above do not include any demographic information; this is obviously problematic when one is interested in examining crime data along racial dimensions.  Fortunately, SPD participates in the National Incident-Based Reporting System ([NIBRS](https://www.icpsr.umich.edu/icpsrweb/ICPSR/series/128)) and some of the records -- approximately 40% -- submitted into this system do contain demographic information.  
+
+These data are matched the spatial data above by incident datetime and type of crime which only works for instances in which this information is unique (otherwise it is not possible to match).  Using this strategy, approximately 14% of the records can be matched.  The signficance of this is that the matched data provide demographic information by both sector AND race. 
+
+Aggregrate counts are summarized below:
+
+```{r mibr, fig.width = 9, fig.height = 3}
+dat <- mibr
+dat$year <- year(ymd_hms(dat$dt))
+dat %<>% mutate(race = replace(race, race == 'U' & ethn == 'H', 'H'))
+dat %<>% filter(race %in% c('A', 'B', 'H', 'I', 'W'))
+dat %<>% filter(year >= 2013)
+dat$intr <- interaction(dat$race, dat$type, sep = '_')
+dat$intr %<>% factor(levels = levels(dat$intr)[c(6, 1, 7, 2, 8, 3, 9, 4, 10, 5)])
+
+pcols <- c("#F8766D", "#A3A500", "#00BF7D", "#00B0F6", "#E76BF3")
+
+p <- ggplot(dat) +
+  geom_histogram(
+    aes(race, fill = intr, alpha = intr),
+    stat = 'count', 
+    position = 'stack'
+    ) +
+  scale_fill_manual(drop = F, values = unlist(map(pcols, rep, 2))) +
+  scale_alpha_manual(drop = F, values = rep(c(0.5, 1), 5)) +
+  facet_wrap(~year) +
+  theme(legend.position = 'none') +
+  labs(x = 'Race/Ethnicity', y = 'Count')
+p
+```
+
+where: A indicates Asian, B indicates Black, H indicates Hispanic, I indicates Alaska Native or American Indian, and W indicates White.  The solid portion of each bar in the plot above represents data found in the Arrestee segment of the NIBRS data set while the transparent portion represents data found in the Offender segment of the data set.
+
+## Terry stops
+
+SPD's Terry stop data can be found [here](https://data.seattle.gov/Public-Safety/Terry-Stops/28ny-9ts8).  The aggregated demographic information is summarized below:
+
+```{r terry-1, fig.width = 9, fig.height = 3}
+dat <- terr
+dat$year <- year(ymd_hms(dat$date_reported))
+dat %<>% filter(subjectrace %in% c('A', 'B', 'H', 'I', 'W'))
+dat$intr <- interaction(dat$subjectrace, dat$arrestflag, sep = '_')
+dat$intr %<>% factor(levels = sort(levels(dat$intr)))
+
+p <- ggplot(dat) +
+  geom_histogram(
+    aes(subjectrace, fill = intr, alpha = intr),
+    stat = 'count',
+    position = 'stack'
+  ) +
+  scale_fill_manual(drop = F, values = unlist(map(pcols, rep, 2))) +
+  scale_alpha_manual(drop = F, values = rep(c(0.5, 1), 5)) +
+  facet_wrap(~year) +
+  theme(legend.position = 'none') +
+  labs(x = 'Race/Ethnicity', y = 'Count')
+p
+```
+
+where A, B, H, I, and W are defined as above.  In this case, the solid portion of each bar represents stops that led to an arrest while the transparent portion represents stops that did not.  
+
+```{r terry-2, fig.width = 6, fig.height = 3 / 1.17}
+
+```
+
+## American Community Survey
+
+Demographic data for each police sector are obtained by utilizing the 2015 five-year estimates of the American Community Survey.  These data are available at the block-group level of which the city contains 482; of these, 389 lie completely within one of the the 17 police sectors.  For those block-groups lying in multiple sectors, the percentage of area of overlap bewteen the sector and the block-group is used to spatially allocate the data.  For example, approximatley 30% of the area of Block Group 6 of Census Tract 32 is located in sector B and so sector B is apportioned 30% of that block-group's population, etc.
+
+A natural point of comparison is the deomgraphic profile of the city as a whole.  This is summarized below:
+
+```{r acs-race, fig.width = 3.375, fig.height = 3}
+acs <- tbl(db, 'acs_sector') %>% collect()
+
+race <- select(acs, sector, str_c('B02001_00', 2:5), B03003_003)
+race %<>% setNames(c('sector', 'W', 'B', 'I', 'A', 'H'))
+race %<>% gather(race, est, -sector)
+race %<>% group_by(race) %>% summarise(est = sum(est) / 100)
+race$year <- 2015
+
+p <- ggplot(race) +
+  geom_histogram(
+    aes(race, est, fill = race),
+    stat = 'identity',
+    position = 'stack'
+    ) +
+  facet_wrap(~year) +
+  theme(legend.position = 'none') +
+  labs(x = 'Race/Ethnicity', y = 'Count (100s of persons)')
+p
+```
+
+```{r acs-tom}
+E4 <- str_c('B15003_0', 21:25)
+tom <- acs %>%
+  mutate(
+    inc = B19013_001,
+    pctB = B02001_003 / B02001_001
+  ) %>%
+  within({
+    pctE4 <- rowSums(acs[E4]) / B15003_001
+  }) %>%
+  filter(!sector %in% c('9', 'H')) %>%
+  select(sector, inc, pctB, pctE4)
+
+dat <- tibble(
+  var = c('Median Income', 'Proportion black', 'Proportion with four year degree'),
+  mean = apply(tom[2:4], 2, mean),
+  sd = apply(tom[2:4], 2, sd),
+  min = apply(tom[2:4], 2, min),
+  max = apply(tom[2:4], 2, max)
+)
+
+knitr::kable(
+  dat,
+  align = 'lcccc',
+  row.names = F,
+  col.names = c('', 'Mean', 'SD', 'Min', 'Max'),
+  digits = 2,
+  caption = 'Table of Means'
+)
+```
+
+<!--#########################################################################-->
+# Models
+<!--#########################################################################-->
+
+For each race $r = \{A, B, I, W\}$ and sector $s$, the annual number of Terry stops $y_{rs}$ is modeled as an overdispersed Poisson regression using the rate of crimes $\theta_{rs}$ as an offset:
+
+\begin{equation*}
+y_{rst} \sim \text{Poisson} \left( \theta_{rs} e^{\mu + \alpha_r + \beta_s + \epsilon_{rst}} \right)
+\end{equation*}
+
+where the $\alpha_r$'s control for each race, the $\beta_s$'s account for variation between sectors, and the $\epsilon_{rs}$'s allow for overdispersion.  The subscript $t$ is used explicitly since two years of data is available for use.  Of course, $\theta_{rs}$ is not observed.  Thus, the number of previous year's arrests $a_{rs(t-1)}$ is used as a proxy:
+
+\begin{equation}
+y_{rst} \sim \text{Poisson} \left( a_{rs(t-1)} e^{\mu + \alpha_r + \beta_s + \epsilon_{rst}} \right)
+(\#eq:model-b1)
+\end{equation}
+
+In addition, two alternative specifications are considered.  First, the offset $a_{rs(t-1)}$ is modeled more flexibly by including it as a predictor with its own coefficent:
+
+\begin{equation}
+y_{rst} \sim \text{Poisson} \left( e^{\gamma \log(a_{rs(t-1)}) + \mu + \alpha_r + \beta_s + \epsilon_{rst}} \right)
+(\#eq:model-b2)
+\end{equation}
+
+Second, the proportion of the sector's population that is black $z_{1s}$ is added as a predictor:
+
+\begin{equation}
+y_{rst} \sim \text{Poisson} \left( a_{rs(t-1)} e^{\mu + \alpha_r + \beta_s + \rho z_{1s} + \epsilon_{rst}} \right)
+(\#eq:model-b3)
+\end{equation}
+
+As alternative approach, the number of arrests $a_{rst}$ are assumed to be a realization of the true crime rate:
+
+\begin{equation*}
+\begin{split}
+y_{rst} &\sim \text{Poisson} \left( \theta_{rs} e^{\mu + \alpha_r + \beta_s + \epsilon_{rst}} \right) \\
+a_{rst} &\sim \text{Poisson} \left( \theta_{rs} \right)
+\end{split}
+\end{equation*}
+
+with the rate then modeled as function of each race's population in the sector $p_{rs}$ and an additional set of race and sector parameters $\delta_r$ and $\zeta_s$:
+
+\begin{equation}
+\log(\theta_{rs}) = \log(p_{rs}) + \nu + \delta_r + \zeta_s + \upsilon_{rs}
+(\#eq:model-c1)
+\end{equation}
+
+Two additional specifications of the model for $\theta_{rs}$ are also considered.  First, the population $p_{rs}$ is given its own coefficent:
+
+\begin{equation}
+\log(\theta_{rs}) = \gamma \log(p_{rs}) + \nu + \delta_r + \zeta_s + \upsilon_{rs}
+(\#eq:model-c2)
+\end{equation}
+
+Second, each sector's log median income $z_{2s}$ and proportion of the population with at least a four-year degree $z_{3s}$ are included as predictors:
+
+\begin{equation}
+\log(\theta_{rs}) = \log(p_{rs}) + \nu + \delta_r + \zeta_s + \phi z_{2s} + \psi z_{3s} + \upsilon_{rs}
+(\#eq:model-c3)
+\end{equation}
+
+As a final approach, a model is considered where overdispersion in the model for $a_{rst}$ is allowed for:
+
+\begin{equation*}
+\begin{split}
+y_{rst} &\sim \text{Poisson} \left( \theta_{rs} e^{\mu + \alpha_r + \beta_s + \epsilon_{rst}} \right) \\
+a_{rst} &\sim \text{Poisson} \left( \theta_{rs} e^{\omega_{rst}} \right)
+\end{split}
+\end{equation*}
+
+Similar specifications for the true crime rate as in \@ref(eq:model-c1), \@ref(eq:model-c2), and \@ref(eq:model-c3) are used with the exception of the $\upsilon_{rs}$ term.
+
+The models are fit using $\texttt{Stan}$ with the following normal priors:
+
+\begin{equation*}
+\begin{split}
+\alpha_r &\sim N(0, \sigma_{\alpha}^2) \\
+\beta_s &\sim N(0, \sigma_{\beta}^2) \\
+\epsilon_{rs} &\sim N(0, \sigma_{\epsilon}^2)
+\end{split}
+\end{equation*}
+
+where $\sigma_{\alpha}$, $\sigma_{\beta}$, and $\sigma_{\epsilon}$ represent the variation in the parameters for race, sector, and overdispersion respectively.  A similar set of priors are used for the approahces which explicitly model $\theta_{rs}$:
+
+\begin{equation*}
+\begin{split}
+\delta_r &\sim N(0, \sigma_{\delta}^2) \\
+\zeta_s &\sim N(0, \sigma_{\zeta}^2) \\
+\upsilon_{rs} &\sim N(0, \sigma_{\upsilon}^2) \\
+\omega_{rs} &\sim N(0, \sigma_{\omega}^2) 
+\end{split}
+\end{equation*}
+
+The above $\sigma$ parameters -- as well as all other parameters in each of the models -- are given flat priors.
+
+<!-- \begin{equation*} -->
+<!-- \begin{split} -->
+<!-- \sigma_{\alpha} &\sim N_{\geq 0}(0, 1) \\ -->
+<!-- \sigma_{\delta} &\sim N_{\geq 0}(0, 1) -->
+<!-- \end{split} -->
+<!-- \end{equation*} -->
+
+<!-- where $N_{\geq 0}$ denotes the half-normal distribution with non-negative support. -->
+
+<!--#########################################################################-->
+# Results
+<!--#########################################################################-->
+
+```{r fits}
+load('analysis/poisson_stan_fits_nu.Rda')
+m <- map(c('b', 'c', 'd'), ~str_c(.x, 1:3)) %>% unlist()
+mlabs <- str_c('2', 1:9, sep = '.')
+sig <- c('a', 'b', 'e', 'd', 'z', 'u', 'w')
+labs <- list(
+  r = c('A', 'B', 'I', 'W'),
+  s = LETTERS[2:23][-c(7, 8, 15, 19, 21)]
+)
+```
+
+```{r rhat, fig.width = 5, fig.height = 4}
+# dat <- map_dfr(m, extract_rhat)
+# p <- ggplot(dat) +
+#   geom_histogram(aes(rhat, colour = param, fill = model))
+# p
+```
+
+```{r table-data}
+tab_fun <- function(m) {
+  tmp <- summary(fit[[m]]$result)$summary
+  p <- rownames(tmp)
+  tmp %<>% as_tibble()
+  tmp$param <- p 
+  tmp$model <- m
+  p <- 'mu|nu|gamma|rho|phi|psi|sigma'
+  tmp <- tmp[str_detect(tmp$param, p), ]
+  select(tmp, model, param, mean, sd)
+}
+tab_dat <- map_dfr(m, tab_fun)
+tab_dat %<>% filter(!param %in% c('sigma_a', 'sigma_d'))
+
+# adjusted constants
+mu <- map_dfr(m, extract_pars, pars = 'mu', adjust = T)
+nu <- map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'nu', adjust = T)
+tab_dat$mean[tab_dat$param == 'mu'] <- mu$mean
+tab_dat$mean[tab_dat$param == 'nu'] <- nu$mean
+tab_dat$sd[tab_dat$param == 'mu'] <- mu$sd
+tab_dat$sd[tab_dat$param == 'nu'] <- nu$sd
+
+# table values
+tab_dat %<>%
+  mutate(
+    value = str_c(format(mean, digits = 1), ' (', format(sd, digits = 1), ')')
+    )
+
+# reshape and set NA to blank
+tab_dat %<>% select(-mean, -sd)
+tab_dat %<>% spread(model, value)
+tab_dat[is.na(tab_dat)] <- ''
+
+# rearrange
+tab_s <- sig[-c(1, 4)]
+tab_o <- c('mu', 'nu', 'gamma', 'rho', 'phi', 'psi', str_c('sigma_', tab_s))
+tab_dat <- tab_dat[match(tab_o, tab_dat$param), ]
+
+# add greek notation
+tab_dat$greek <- c(
+  '$\\mu^{adj}$',
+  '$\\nu^{adj}$',
+  '$\\gamma$',
+  '$\\rho$',
+  '$\\phi$',
+  '$\\psi$',
+  '$\\sigma_\\beta$',
+  '$\\sigma_\\epsilon$',
+  '$\\sigma_\\zeta$',
+  '$\\sigma_\\upsilon$',
+  '$\\sigma_\\omega$'
+)
+```
+
+```{r table-one}
+tab_one <- tab_dat[c(1, 3:4, 7:8), c(11, 2:10)]
+tab_one[2, 6] <- ''
+tab_one[2, 9] <- ''
+knitr::kable(
+  tab_one,
+  align = 'c',
+  row.names = F,
+  col.names = c('', mlabs),
+  caption = 'Estimates and standard errors for the Poisson regression model of $y_{rst}$'
+  )
+```
+
+```{r plots-one, cache = T, fig.width = 10, fig.height = 4}
+alpha <- map_dfr(m, extract_pars, pars = 'alpha', adjust = T, labs = labs$r)
+alpha$group <- 'Race'
+beta <- map_dfr(m, extract_pars, pars = 'beta', adjust = T, labs = labs$s)
+beta$group <- 'Sector'
+dat <- rbind(alpha, beta)
+
+p <- ggplot(dat, aes(label, exp(mean), colour = model)) +
+  geom_point(
+    position = position_dodge(width = 0.5)
+    ) +
+  geom_errorbar(
+    aes(ymin = exp(lower), ymax = exp(upper)),
+    position = position_dodge(width = 0.5),
+    width = 0.2
+    ) +
+  geom_hline(aes(yintercept = 1), linetype = 2) +
+  scale_colour_discrete(name = 'Model', labels = mlabs) +
+  facet_wrap(~group, scales = 'free_x') +
+  labs(x = '', y = 'Rate of stops relative to arrests')
+p
+```
+
+```{r table-two}
+knitr::kable(
+  tab_dat[c(2, 3, 5:6, 9:11), c(11, 5:10)],
+  align = 'c',
+  row.names = F,
+  col.names = c('', mlabs[4:9]),
+  caption = 'Estimates and standard errors for the Poisson regression model of $\\theta_{rs}$'
+  )
+```
+
+```{r plots-two, cache = T, fig.width = 10, fig.height = 4}
+delta <- map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'delta', adjust = T, labs = labs$r)
+delta$group <- 'Race'
+zeta <- map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'zeta', adjust = T, labs = labs$s)
+zeta$group <- 'Sector'
+dat <- rbind(delta, zeta)
+
+p <- ggplot(dat, aes(label, exp(mean), colour = model)) +
+  geom_point(
+    position = position_dodge(width = 0.5)
+    ) +
+  geom_errorbar(
+    aes(ymin = exp(lower), ymax = exp(upper)),
+    position = position_dodge(width = 0.5),
+    width = 0.2
+    ) +
+  geom_hline(aes(yintercept = 1), linetype = 2) +
+  scale_colour_discrete(name = 'Model', labels = mlabs) +
+  facet_wrap(~group, scales = 'free_x') +
+  labs(x = '', y = 'Rate of crimes relative to population')
+p
+```
+
+```{r sigma, cache = T, fig.width = 10, fig.height = 4}
+# dat <- rbind(
+#   map_dfr(m, extract_pars, pars = 'sigma_a'),
+#   map_dfr(m, extract_pars, pars = 'sigma_b'),
+#   map_dfr(m, extract_pars, pars = 'sigma_e'),
+#   map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'sigma_d'),
+#   map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'sigma_z'),
+#   map_dfr(str_subset(m, 'c'), extract_pars, pars = 'sigma_u'),
+#   map_dfr(str_subset(m, 'd'), extract_pars, pars = 'sigma_w')
+# )
+# dat$level <- 'one'
+# dat$level[dat$label %in% str_c('sigma_', sig[4:7])] <- 'two'
+# dat$label %<>% factor(levels = str_c('sigma_', sig))
+# 
+# p <- ggplot(dat, aes(label, mean, colour = model)) +
+#   geom_point(
+#     position = position_dodge(width = 0.5)
+#     ) +
+#   geom_errorbar(
+#     aes(ymin = lower, ymax = upper),
+#     position = position_dodge(width = 0.5),
+#     width = 0.2
+#     ) +
+#   facet_wrap(~level, scales = 'free_x')
+# p
+```
+
+```{r theta, cache = T, fig.width = 10, fig.height = 8}
+theta <- map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'theta')
+theta$sector <- map(labs$s, rep, 4) %>% unlist()
+theta$race <- rep(labs$r, 17)
+
+p <- ggplot(theta, aes(sector, mean, colour = model)) +
+  geom_point(
+    position = position_dodge(width = 0.5)
+    ) +
+  geom_errorbar(
+    aes(ymin = lower, ymax = upper),
+    position = position_dodge(width = 0.5),
+    width = 0.2
+    ) +
+  facet_wrap(~race, scales = 'free')
+p
+```
+
+```{r pp-stops, cache = T, fig.width = 10, fig.height = 8}
+combo <- crossing(model = m, year = 2015:2016, sector = labs$s, race = labs$r)
+combo %<>% arrange(year, model, sector, race)
+combo$y <- rep(fit$data$y, 9)
+  
+lp <- map_dfr(m, extract_pars, pars = 'lp')
+lp <- cbind(lp, select(combo, -model, -y))
+th <- map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'theta')
+th <- cbind(th, select(combo[205:612, ], -model, -year, -y))
+sb <- map_dfr(m, extract_pars, pars = 'sigma_b')
+su <- map_dfr(str_subset(m, 'c'), extract_pars, pars = 'sigma_u')
+
+par <- left_join(
+  select(lp, -label, -lower, -upper),
+  select(th, -label, -lower, -upper),
+  by = c('model', 'sector', 'race')
+)
+par %<>% full_join(select(sb, model, mean), by = 'model')
+par %<>% full_join(select(su, model, mean), by = 'model')
+par %<>% 
+  mutate(
+    mean.y = replace(mean.y, is.na(mean.y), 1),
+    mean.y.y = replace(mean.y.y, is.na(mean.y.y), 0)
+  )
+
+v1 <- par$mean.x + log(par$mean.y)
+v2 <- par$mean.x.x + par$mean.y.y
+hpd <- map2(v1, v2, ~rpois_rnorm(1000, .x, .y))
+hpd %<>% map(coda::mcmc)
+hpd %<>% map(coda::HPDinterval)
+hpd <- do.call(rbind, hpd) ; rownames(hpd) <- c()
+
+dat <- cbind(combo, hpd)
+
+tb_stops <- table(dat$model, dat$y > dat$lower & dat$y < dat$upper)
+
+# p <- ggplot(dat, aes(race, y, colour = model)) +
+#   geom_point(
+#     position = position_dodge(width = 0.5)
+#     ) +
+#   geom_errorbar(
+#     aes(ymin = lower, ymax = upper),
+#     position = position_dodge(width = 0.5),
+#     width = 0.2
+#     ) +
+#   facet_wrap(~sector, scales = 'free')
+# p
+```
+
+```{r pp-arrests, cache = T, fig.width = 10, fig.height = 8}
+combo <- crossing(
+  model = str_subset(m, 'c|d'),
+  year = 2015:2016,
+  sector = labs$s,
+  race = labs$r
+  )
+combo %<>% arrange(model, year, sector, race)
+combo$b <- rep(fit$data$b, 6)
+
+th <- map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'theta')
+th <- cbind(th, select(combo[1:408, ], -model, -year, -b))
+su <- map_dfr(str_subset(m, 'c'), extract_pars, pars = 'sigma_u')
+sw <- map_dfr(str_subset(m, 'd'), extract_pars, pars = 'sigma_w')
+
+par <- left_join(
+  select(th, -label, -lower, -upper),
+  select(su, model, mean),
+  by = 'model'
+)
+par %<>% full_join(select(sw, model, mean), by = 'model')
+par %<>%
+  mutate(
+    mean.y = replace(mean.y, is.na(mean.y), 0),
+    mean = replace(mean, is.na(mean), 0)
+  )
+
+v1 <- log(par$mean.x)
+v2 <- par$mean.y + par$mean
+hpd <- map2(v1, v2, ~rpois_rnorm(1000, .x, .y))
+hpd %<>% map(coda::mcmc)
+hpd %<>% map(coda::HPDinterval)
+hpd <- do.call(rbind, hpd) ; rownames(hpd) <- c()
+
+dat <- cbind(combo, hpd)
+
+tb_arrests <- table(dat$model, dat$b > dat$lower & dat$b < dat$upper)
+
+# p <- ggplot(dat, aes(sector, b, colour = model)) +
+#   geom_point(
+#     position = position_dodge(width = 0.5)
+#     ) +
+#   geom_errorbar(
+#     aes(ymin = lower, ymax = upper),
+#     position = position_dodge(width = 0.5),
+#     width = 0.2
+#     ) +
+#   facet_wrap(~race, scales = 'free')
+# p
+```
+
+```{r classify}
+dat <- tibble(
+  model = m,
+  a1 = 100 * tb_stops[, 'TRUE'] / 136,
+  a2 = c(NA, NA, NA, 100 * tb_arrests[, 'TRUE'] / 136)
+)
+dat %<>% gather(variable, value, -model)
+dat %<>% spread(model, value)
+dat$variable <- c('$y_{rst}$', '$a_{rst}$')
+
+knitr::kable(
+  dat,
+  align = 'c',
+  row.names = F,
+  col.names = c('', str_c('2', 1:9, sep = '.')),
+  digits = 1,
+  caption = 'Classification rates (95% HPD intervals of the simulated model contain observed data)'
+  )
+```

@@ -9,7 +9,7 @@
 # r code to get seattle shapefiles via tigris
 # ------------------------------------------------------------------------------
 echo -e "library(tigris) ; options(tigris_use_cache = T); \
-    setwd('~/Projects/d4d/rsji/raw'); \
+    setwd('~/Projects/rsji/raw'); \
     places('WA'); \
     block_groups('WA', 'King'); \
     blocks('WA', 'King')" \
@@ -20,15 +20,15 @@ echo -e "library(tigris) ; options(tigris_use_cache = T); \
 # ------------------------------------------------------------------------------
 
 # database
-db=~/Projects/d4d/rsji/rsji.sqlite
-db_gis=~/Projects/d4d/rsji/rsji_gis.sqlite
+db=~/Projects/rsji/rsji.sqlite
+db_gis=~/Projects/rsji/rsji_gis.sqlite
 
 # ------------------------------------------------------------------------------
 # shapefiles
 # ------------------------------------------------------------------------------
 
 # location of zipfiles
-cd ~/Projects/d4d/rsji/raw/
+cd ~/Projects/rsji/raw/
 
 # file names
 f=("SPD_BEATS_WGS84" "tl_2015_53_place" "tl_2015_53_bg")
@@ -38,7 +38,7 @@ f=(${f[@]} "tl_2015_53_tabblock10")
 t=("beats" "places" "blockgroups" "blocks")
 
 # epsg parameters
-epsg=(4326 4269 4269 4269)
+epsg=(3857 4269 4269 4269)
 
 # add to gis database
 for i in `seq 0 1 3`; do

@@ -2,6 +2,9 @@
 # preample
 # ------------------------------------------------------------------------------
 library(rgdal)
+library(rgeos)
+library(sp)
+library(maptools)
 load_tidy()
 
 # databases
@@ -9,68 +12,77 @@ db <- src_sqlite('rsji.sqlite', create = F)
 db_gis <- 'rsji_gis.sqlite'
 
 # ------------------------------------------------------------------------------
-# seattle blockgroups file
+# spatial data
 # ------------------------------------------------------------------------------
 
-# link and download
-pag  <- 'https://www.seattle.gov/Documents/Departments/OPCD/Demographics/GeographicFilesandMaps/'
-file <- 'SeattleCensusBlocksandNeighborhoodCorrelationFile.xlsx'
-download.file(str_c(pag, file), destfile = 'raw/tmp.xlsx')
-
-# read and tidy up
-geo <- read_excel('./rsji/raw/tmp.xlsx')
+# seattle bg's
+p <- 'https://www.seattle.gov/Documents/Departments/OPCD/Demographics/GeographicFilesandMaps/'
+f <- 'SeattleCensusBlocksandNeighborhoodCorrelationFile.xlsx'
+download.file(str_c(p, f), destfile = 'raw/tmp.xlsx')
+geo <- read_excel('./raw/tmp.xlsx')
 names(geo) %<>% tolower()
 
-# blockgroups and blocks
-s_groups <- str_sub(s_blocks, 1, 12) %>% unique()
-s_blocks <- geo$geoid10 %>% unique() %>% as.character() 
+# block groups
+bgs <- readOGR(db_gis, 'blockgroups')
+bgs <- spTransform(bgs, '+init=epsg:32610')
+bgs <- bgs[bgs$GEOID %in% unique(str_sub(geo$geoid10, 1, 12)), ]
 
-# add beat columns
-geo$beat_bl <- NA
-geo$beat_bg <- NA
-
-# ------------------------------------------------------------------------------
-# spatillay compare seattle blocks with spd beats
-# ------------------------------------------------------------------------------
+# beats
 spd <- readOGR(db_gis, 'beats')
-blk <- readOGR(db_gis, 'blocks')
+spd <- spTransform(spd, proj4string(blk))
 
-# function to check a beat against an individual block
-sContains <- function(beat, block, pb = NULL) {
-  if (!is.null(pb)) pb$tick()$print()
-  gContains(spd[spd$beat == beat, ], blk[blk$GEOID10 == block, ])
-  
-}
+# ------------------------------------------------------------------------------
+# sectors
+# ------------------------------------------------------------------------------
 
-# beats against blocks
-for (b in beats$beat) {
-  pb <- progress_estimated(length(s_blocks))
-  ck <- map_lgl(s_blocks, ~sContains(b, .x, pb = pb))
-  ck <- s_blocks[ck]
-  geo$beat_bl[geo$geoid10 %in% ck] <- b
-}
+# sector polygons
+spd_sectors <- unionSpatialPolygons(spd, str_sub(spd@data$beat, 1, 1))
+spd_sectors <- SpatialPolygonsDataFrame(
+  spd_sectors,
+  data.frame(sector = names(spd_sectors)),
+  match.ID = F
+  )
 
-# get beats/sector/precinct
-spd_beats <- spd_beats@data
-beats <- left_join(geo, spd_beats[c(2, 3)], by = c('beat_bl' = 'beat'))
-beats %<>% rename(beats, prec = first_prec)
-beats$sector <- str_sub(beats$beat_bl, 1, 1)
+# intersect
+spd_bgs <- raster::intersect(spd_sectors, bgs)
 
-# calculate percentage of blocks within particular beat
-beats %<>%
-  group_by(tract_10, bg) %>%
-  mutate(n_tbl = n()) %>% # blocks within blockgroup
-  group_by(tract_10, bg, sector) %>%
-  mutate(n_sbl = n()) %>% # blocks within sector
-  group_by(tract_10, bg, prec) %>%
-  mutate(n_pbl = n()) %>% # blocks within precinct
-  ungroup() %>%
-  mutate(
-    pct_sbl = n_sbl / n_tbl,
-    pct_pbl = n_pbl / n_tbl
-    )
+# areas by sector and block group
+areas <- tibble(ALAND = map_dbl(spd_bgs@polygons, ~slot(.x, 'area')))
+row.names(areas) <- map_chr(spd_bgs@polygons, ~slot(.x, 'ID'))
+areas <- spCbind(spd_bgs, areas)
+
+# sectors
+sectors <- areas@data %>%
+  mutate(pct = ALAND.1 / (ALAND + AWATER)) %>%
+  select(GEOID, sector, pct)
+
+# ------------------------------------------------------------------------------
+# beats
+# ------------------------------------------------------------------------------
+
+# beat polygons
+spd_beats <- unionSpatialPolygons(spd, spd@data$beat)
+spd_beats <- SpatialPolygonsDataFrame(
+  spd_beats,
+  data.frame(beat = names(spd_beats)),
+  match.ID = F
+)
+
+# intersect
+spd_bgs <- raster::intersect(spd_beats, bgs)
+
+# areas by sector and block group
+areas <- tibble(ALAND = map_dbl(spd_bgs@polygons, ~slot(.x, 'area')))
+row.names(areas) <- map_chr(spd_bgs@polygons, ~slot(.x, 'ID'))
+areas <- spCbind(spd_bgs, areas)
+
+# sectors
+beats <- areas@data %>%
+  mutate(pct = ALAND.1 / (ALAND + AWATER)) %>%
+  select(GEOID, beat, pct)
 
 # ------------------------------------------------------------------------------
 # add to database
 # ------------------------------------------------------------------------------
+copy_to(db, sectors, temporary = F, overwrite = T)
 copy_to(db, beats, temporary = F, overwrite = T)

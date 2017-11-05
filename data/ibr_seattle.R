@@ -22,6 +22,12 @@ ucr <- tbl(db, 'codes_spd') %>% collect()
 ucr$offense_code %<>% as.character()
 sibr <- left_join(sibr, ucr)
 
+# keep unique go numbers (may have duplicates because of multiple crimes)
+sibr %<>% select(-rms_cdw_id) %>% distinct()
+
+# rename
+sibr %<>% rename(sector = `district/sector`, beat = `zone/beat`)
+
 # ------------------------------------------------------------------------------
 # add to database
 # ------------------------------------------------------------------------------

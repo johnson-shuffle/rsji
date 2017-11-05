@@ -30,6 +30,20 @@ terry <- read.socrata(
   password  = spd_credi[2]
 )
 
+# tidy up race
+terry$subjectrace %<>% as.factor()
+levels(terry$subjectrace) <- c('U', 'I', 'A', 'B', 'H', 'M', 'O', 'U', 'W')
+terry$subjectrace %<>% as.character()
+
+# tidy up gender
+terry$subjectgender %<>% as.factor()
+levels(terry$subjectgender) <- c('U', 'F', 'M', 'U')
+terry$subjectgender %<>% as.character()
+
+# report date/time
+date_reported <- str_split(terry$reported_time, '\\.', simplify = T)[, 1]
+terry$date_reported <- str_c(terry$reported_date, date_reported, sep = ' ')
+
 # ------------------------------------------------------------------------------
 # add to database
 # ------------------------------------------------------------------------------

@@ -47,15 +47,11 @@ nibr %<>%
 sibr <- tbl(db, 'sibr') %>% collect()
 sibr %<>%
   mutate(
-    dt = parse_date_time(
-      occurred_start, 
-      orders = '%Y-%m-%d %H:%M:%S',
-      tz = 'US/Pacific'
-    ),
-    wd = str_c(hour(occurred_start), hour(occurred_start) + 1, sep = '-'),
-    day = day(occurred_start)
+    dt = parse_date_time(occurred_start, '%m/%d/%Y %H:%M:%S %p', 'US/Pacific'),
+    wd = str_c(hour(dt), hour(dt) + 1, sep = '-'),
+    day = day(dt)
   )
-sibr %<>% filter(year(occurred_start) %in% 2012:2015)
+sibr %<>% filter(year(dt) %in% 2012:2015)
 
 # spd has duplicates??? (unclear if these are unique, assume they are not)
 sibr_names <- names(sibr)[-1]
@@ -80,9 +76,17 @@ mat <- full_join(
   by = 'id'
 )
 mat %<>% filter(!is.na(V2004) & !is.na(general_offense_number))
-mat %<>% select(V2004, rms_cdw_id, ucr_cat, `zone/beat`, longitude, latitude)
-names(mat)[4] <- 'beat'
-mat$sector <- str_sub(mat$beat, 1, 1)
+mat %<>% rename(go_num = general_offense_number)
+mat %<>% select(
+  V2004,
+  go_num,
+  ucr_cat,
+  `district/sector`,
+  `zone/beat`,
+  longitude,
+  latitude
+  )
+names(mat)[4:5] <- c('sector', 'beat')
 
 # ------------------------------------------------------------------------------
 # join demographic and spatial data
@@ -113,10 +117,20 @@ mibr %<>% gather(variable, value, -id, -rec, -type)
 mibr %<>% left_join(mat, by = c('id' = 'V2004'))
 mibr %<>% spread(variable, value)
 
-# add date/time AS CHARACTER! (82856 obs)
+# add date/time AS CHARACTER! (82855 obs)
 mibr %<>% left_join(distinct(nibr, V2004, dt), by = c('id' = 'V2004'))
 mibr$dt %<>% as.character()
 mibr <- mibr[c(1, 4, 2:3, 5:6, 9, 7, 8, 10:14)]
+
+# tidy up demographic varialbes
+mibr %<>%
+  mutate(
+    age = if_else(age == '0' | is.na(age), 'U', age),
+    sex = if_else(sex == '' | is.na(sex), 'U', sex),
+    race = if_else(race == '' | is.na(race), 'U', race),
+    ethn = if_else(ethn == '' | is.na(ethn), 'U', ethn)
+  )
+  
 
 # ------------------------------------------------------------------------------
 # add to database
