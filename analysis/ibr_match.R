@@ -1,15 +1,7 @@
-# ------------------------------------------------------------------------------
-# preample
-# ------------------------------------------------------------------------------
-load_tidy()
+# ----- preample ----------------------------------------------------------
 
-# databases
-db <- src_sqlite('rsji.sqlite', create = F)
-db_gis <- 'rsji_gis.sqlite'
 
-# ------------------------------------------------------------------------------
-# parse dates, create windows, keep 2015
-# ------------------------------------------------------------------------------
+# ----- parse dates, create windows, keep 2015 ----------------------------
 
 # national data
 nibr1 <- tbl(db, 'nibr1') %>% collect()
@@ -59,9 +51,9 @@ sibr %<>% unite(id, -rms_cdw_id)
 sibr %<>% group_by(id) %>% mutate(r = row_number()) %>% filter(r == max(r))
 sibr %<>% select(-r) %>% separate(id, into = sibr_names, sep = '_')
 
-# ------------------------------------------------------------------------------
-# candidate matches based on date, window, and crime
-# ------------------------------------------------------------------------------
+
+# ----- candidate matches based on date, window, and crime ----------------
+
 nibr %<>% unite(id, year, month, day, wd, V2006)
 sibr %<>% unite(id, year, month, day, wd, ucr_code)
 
@@ -88,9 +80,8 @@ mat %<>% select(
   )
 names(mat)[4:5] <- c('sector', 'beat')
 
-# ------------------------------------------------------------------------------
-# join demographic and spatial data
-# ------------------------------------------------------------------------------
+
+# ----- join demographic and spatial data ---------------------------------
 
 # arrestee demographics
 dem1 <- tbl(db, 'nibr6') %>%
@@ -132,7 +123,6 @@ mibr %<>%
   )
   
 
-# ------------------------------------------------------------------------------
-# add to database
-# ------------------------------------------------------------------------------
+# ----- add to database ---------------------------------------------------
+
 copy_to(db, mibr, temporary = F, overwrite = T)

@@ -1,16 +1,11 @@
-# ------------------------------------------------------------------------------
-# preample
-# ------------------------------------------------------------------------------
+# ----- preample ----------------------------------------------------------
+
 library(acs)
-load_tidy()
 
-# databases
-db <- src_sqlite('rsji.sqlite', create = F)
-db_gis <- 'rsji_gis.sqlite'
 
-# ------------------------------------------------------------------------------
-# census api
-# ------------------------------------------------------------------------------
+# ----- census api --------------------------------------------------------
+
+# police beats
 b <- tbl(db, 'beats') %>%
   distinct(tract_10, bg) %>%
   arrange(tract_10, bg) %>%
@@ -54,11 +49,12 @@ names(acs) <-
 # save
 #save(acs_query, file = './rsji/data/acs_queries.Rda')
 
-# ------------------------------------------------------------------------------
-# tidy up the census data
-# ------------------------------------------------------------------------------
-load('./rsji/data/acs_queries.Rda')
 
+# ----- tidy up -----------------------------------------------------------
+
+load('data/acs_queries.Rda')
+
+# helper function
 acs_to_tibble <- function(x) {
   tmp1 <- as_tibble(cbind(geography(x), estimate(x)))
   tmp2 <- as_tibble(cbind(geography(x), standard.error(x)))
@@ -69,11 +65,12 @@ acs_to_tibble <- function(x) {
 }
 
 # convert acs to tibble
-acs_api <- map(acs_query, acs_to_tibble)
-acs_api <- do.call(rbind, acs_api)
+acs_api <- map_dfr(acs_query, acs_to_tibble)
+
+# convert to numeric
 acs_api %<>% mutate_at(vars(state, county, blockgroup), as.numeric)
 
-# ------------------------------------------------------------------------------
-# add to database
-# ------------------------------------------------------------------------------
+
+# ----- add to database ---------------------------------------------------
+
 copy_to(db, acs_api, temporary = F, overwrite = T)

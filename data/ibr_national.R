@@ -1,21 +1,16 @@
-# ------------------------------------------------------------------------------
-# preample
-# ------------------------------------------------------------------------------
+# ----- preample ----------------------------------------------------------
+
 library(SAScii)
 library(LaF)
-load_tidy()
-
-# databases
-db <- src_sqlite('rsji.sqlite', create = F)
-db_gis <- 'rsji_gis.sqlite'
 
 # files
 fln <- list.files('~/Desktop/nibrs', pattern = '^ICPSR_')
 fln <- file.path('~/Desktop/nibrs', fln[13:16])
 
-# ------------------------------------------------------------------------------
-# download the raw data
-# ------------------------------------------------------------------------------
+
+# ----- download the raw data ---------------------------------------------
+
+# helper function
 nibr_get <- function(series, email = NULL, password = NULL, dest_dir = NULL) {
   
   pag <- GET(
@@ -49,9 +44,11 @@ nibr_get <- function(series, email = NULL, password = NULL, dest_dir = NULL) {
 #   dest_dir = '/Volumes/32GB_BRO/nibrs/'
   )
 
-# ------------------------------------------------------------------------------
-# locate segment
-# ------------------------------------------------------------------------------
+
+
+# ----- locate segments ---------------------------------------------------
+
+# helper function
 nibr_seg <- function(file, segment_name) {
   
   fls <- unzip(file, list = T)$Name
@@ -71,9 +68,11 @@ offs_seg <- map_int(fln, nibr_seg, segment_name = 'offense')
 offd_seg <- map_int(fln, nibr_seg, segment_name = 'offender')
 arrs_seg <- map_int(fln, nibr_seg, segment_name = 'arrestee segment')
 
-# ------------------------------------------------------------------------------
-# extract the data
-# ------------------------------------------------------------------------------
+
+
+# ----- extract the data --------------------------------------------------
+
+# helper function
 nibr_zip <- function(file, segment, ori = NULL, pb = NULL) {
   
   if (!is.null(pb)) pb$tick()$print()
@@ -124,45 +123,40 @@ nibr_zip <- function(file, segment, ori = NULL, pb = NULL) {
   
 }
 
-# ------------------------------------------------------------------------------
-# adminstrative segment
-# ------------------------------------------------------------------------------
+
+# administrative segment
 pb <- progress_estimated(length(fln))
-admi <- map2(fln, admi_seg, ~nibr_zip(.x, .y, ori = 'WASPD0000', pb = pb))
+admi <- map2_dfr(fln, admi_seg, ~nibr_zip(.x, .y, ori = 'WASPD0000', pb = pb))
 nibr1 <- do.call(rbind, admi)
 
-# ------------------------------------------------------------------------------
 # offense segment
-# ------------------------------------------------------------------------------
 pb <- progress_estimated(length(fln))
 offs <- map2(fln, offs_seg, ~nibr_zip(.x, .y, ori = 'WASPD0000', pb = pb))
 nibr2 <- do.call(plyr::rbind.fill, offs)
+
+# offender segment
+pb <- progress_estimated(length(fln))
+offd <- map2(fln, offd_seg, ~nibr_zip(.x, .y, ori = 'WASPD0000', pb = pb))
+nibr5  <- do.call(plyr::rbind.fill, offd)
+
+# arrestee segment
+pb <- progress_estimated(length(fln))
+arrs <- map2(fln, arrs_seg, ~nibr_zip(.x, .y, ori = 'WASPD0000', pb = pb))
+nibr6  <- do.call(rbind, arrs)
+
+
+# ----- tidy up -----------------------------------------------------------
 
 # fix labels
 nibr2 <- nibr2[names(offs[[4]])]
 attr(nibr2, 'variable.labels') <- attr(offs[[4]], 'variable.labels')
 
-# ------------------------------------------------------------------------------
-# offender segment
-# ------------------------------------------------------------------------------
-pb <- progress_estimated(length(fln))
-offd <- map2(fln, offd_seg, ~nibr_zip(.x, .y, ori = 'WASPD0000', pb = pb))
-nibr5  <- do.call(plyr::rbind.fill, offd)
-
-# fix labels
 nibr5 <- nibr5[names(offd[[4]])]
 attr(nibr5, 'variable.labels') <- attr(offd[[4]], 'variable.labels')
 
-# ------------------------------------------------------------------------------
-# arrestee segment
-# ------------------------------------------------------------------------------
-pb <- progress_estimated(length(fln))
-arrs <- map2(fln, arrs_seg, ~nibr_zip(.x, .y, ori = 'WASPD0000', pb = pb))
-nibr6  <- do.call(rbind, arrs)
 
-# ------------------------------------------------------------------------------
-# add to database
-# ------------------------------------------------------------------------------
+# ----- add to database ---------------------------------------------------
+
 copy_to(db, nibr1, temporary = F, overwrite = T)
 copy_to(db, nibr2, temporary = F, overwrite = T)
 copy_to(db, nibr5, temporary = F, overwrite = T)

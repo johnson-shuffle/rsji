@@ -1,24 +1,15 @@
-# ------------------------------------------------------------------------------
-# preample
-# ------------------------------------------------------------------------------
+# ----- preample ----------------------------------------------------------
+
 library(rgdal)
 library(rgeos)
 library(sp)
 library(maptools)
-load_tidy()
 
-# databases
-db <- src_sqlite('rsji.sqlite', create = F)
-db_gis <- 'rsji_gis.sqlite'
 
-# ------------------------------------------------------------------------------
-# spatial data
-# ------------------------------------------------------------------------------
+# ----- spatial data ------------------------------------------------------
 
 # seattle bg's
-p <- 'https://www.seattle.gov/Documents/Departments/OPCD/Demographics/GeographicFilesandMaps/'
-f <- 'SeattleCensusBlocksandNeighborhoodCorrelationFile.xlsx'
-download.file(str_c(p, f), destfile = 'raw/tmp.xlsx')
+download.file('https://tinyurl.com/y9933p2x', destfile = 'raw/tmp.xlsx')
 geo <- read_excel('./raw/tmp.xlsx')
 names(geo) %<>% tolower()
 
@@ -31,9 +22,8 @@ bgs <- bgs[bgs$GEOID %in% unique(str_sub(geo$geoid10, 1, 12)), ]
 spd <- readOGR(db_gis, 'beats')
 spd <- spTransform(spd, proj4string(blk))
 
-# ------------------------------------------------------------------------------
-# sectors
-# ------------------------------------------------------------------------------
+
+# ----- sectors -----------------------------------------------------------
 
 # sector polygons
 spd_sectors <- unionSpatialPolygons(spd, str_sub(spd@data$beat, 1, 1))
@@ -56,9 +46,8 @@ sectors <- areas@data %>%
   mutate(pct = ALAND.1 / (ALAND + AWATER)) %>%
   select(GEOID, sector, pct)
 
-# ------------------------------------------------------------------------------
-# beats
-# ------------------------------------------------------------------------------
+
+# ----- beats -------------------------------------------------------------
 
 # beat polygons
 spd_beats <- unionSpatialPolygons(spd, spd@data$beat)
@@ -81,8 +70,8 @@ beats <- areas@data %>%
   mutate(pct = ALAND.1 / (ALAND + AWATER)) %>%
   select(GEOID, beat, pct)
 
-# ------------------------------------------------------------------------------
-# add to database
-# ------------------------------------------------------------------------------
+
+# ----- add to database ---------------------------------------------------
+
 copy_to(db, sectors, temporary = F, overwrite = T)
 copy_to(db, beats, temporary = F, overwrite = T)

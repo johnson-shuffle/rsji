@@ -96,9 +96,9 @@ p
 
 Unfortunately, the data presented above do not include any demographic information; this is obviously problematic when one is interested in examining crime data along racial dimensions.  Fortunately, SPD participates in the National Incident-Based Reporting System ([NIBRS](https://www.icpsr.umich.edu/icpsrweb/ICPSR/series/128)) and some of the records -- approximately 40% -- submitted into this system do contain demographic information.  
 
-These data are matched the spatial data above by incident datetime and type of crime which only works for instances in which this information is unique (otherwise it is not possible to match).  Using this strategy, approximately 14% of the records can be matched.  The signficance of this is that the matched data provide demographic information by both sector AND race. 
+These data are matched the spatial data above by incident datetime and type of crime which only works for instances in which this information is unique (otherwise it is not possible to match).  Using this strategy, approximately 14% of the records can be matched.  The significance of this is that the matched data provide demographic information by both sector AND race. 
 
-Aggregrate counts are summarized below:
+Aggregate counts are summarized below:
 
 ```{r mibr, fig.width = 9, fig.height = 3}
 dat <- mibr
@@ -112,7 +112,7 @@ dat$intr %<>% factor(levels = levels(dat$intr)[c(6, 1, 7, 2, 8, 3, 9, 4, 10, 5)]
 pcols <- c("#F8766D", "#A3A500", "#00BF7D", "#00B0F6", "#E76BF3")
 
 p <- ggplot(dat) +
-  geom_histogram(
+  geom_bar(
     aes(race, fill = intr, alpha = intr),
     stat = 'count', 
     position = 'stack'
@@ -125,7 +125,7 @@ p <- ggplot(dat) +
 p
 ```
 
-where: A indicates Asian, B indicates Black, H indicates Hispanic, I indicates Alaska Native or American Indian, and W indicates White.  The solid portion of each bar in the plot above represents data found in the Arrestee segment of the NIBRS data set while the transparent portion represents data found in the Offender segment of the data set.
+where: A indicates Asian, B indicates black, H indicates Hispanic, I indicates Alaska Native or American Indian, and W indicates white.  The solid portion of each bar in the plot above represents data found in the Arrestee segment of the NIBRS data set while the transparent portion represents data found in the Offender segment of the data set.
 
 ## Terry stops
 
@@ -139,7 +139,7 @@ dat$intr <- interaction(dat$subjectrace, dat$arrestflag, sep = '_')
 dat$intr %<>% factor(levels = sort(levels(dat$intr)))
 
 p <- ggplot(dat) +
-  geom_histogram(
+  geom_bar(
     aes(subjectrace, fill = intr, alpha = intr),
     stat = 'count',
     position = 'stack'
@@ -160,9 +160,9 @@ where A, B, H, I, and W are defined as above.  In this case, the solid portion o
 
 ## American Community Survey
 
-Demographic data for each police sector are obtained by utilizing the 2015 five-year estimates of the American Community Survey.  These data are available at the block-group level of which the city contains 482; of these, 389 lie completely within one of the the 17 police sectors.  For those block-groups lying in multiple sectors, the percentage of area of overlap bewteen the sector and the block-group is used to spatially allocate the data.  For example, approximatley 30% of the area of Block Group 6 of Census Tract 32 is located in sector B and so sector B is apportioned 30% of that block-group's population, etc.
+Demographic data for each police sector are obtained by utilizing the 2015 five-year estimates of the American Community Survey.  These data are available at the block-group level of which the city contains 482; of these, 389 lie completely within one of the the 17 police sectors.  For those block-groups lying in multiple sectors, the percentage of area of overlap between the sector and the block-group is used to spatially allocate the data.  For example, approximately 30% of the area of Block Group 6 of Census Tract 32 is located in sector B and so sector B is apportioned 30% of that block-group's population, etc.
 
-A natural point of comparison is the deomgraphic profile of the city as a whole.  This is summarized below:
+A natural point of comparison is the demographic profile of the city as a whole.  This is summarized below:
 
 ```{r acs-race, fig.width = 3.375, fig.height = 3}
 acs <- tbl(db, 'acs_sector') %>% collect()
@@ -174,7 +174,7 @@ race %<>% group_by(race) %>% summarise(est = sum(est) / 100)
 race$year <- 2015
 
 p <- ggplot(race) +
-  geom_histogram(
+  geom_bar(
     aes(race, est, fill = race),
     stat = 'identity',
     position = 'stack'
@@ -184,6 +184,8 @@ p <- ggplot(race) +
   labs(x = 'Race/Ethnicity', y = 'Count (100s of persons)')
 p
 ```
+
+Additionally, the following demographic and economic data are used:
 
 ```{r acs-tom}
 E4 <- str_c('B15003_0', 21:25)
@@ -233,7 +235,7 @@ y_{rst} \sim \text{Poisson} \left( a_{rs(t-1)} e^{\mu + \alpha_r + \beta_s + \ep
 (\#eq:model-b1)
 \end{equation}
 
-In addition, two alternative specifications are considered.  First, the offset $a_{rs(t-1)}$ is modeled more flexibly by including it as a predictor with its own coefficent:
+In addition, two alternative specifications are considered.  First, the offset $a_{rs(t-1)}$ is modeled more flexibly by including it as a predictor with its own coefficient:
 
 \begin{equation}
 y_{rst} \sim \text{Poisson} \left( e^{\gamma \log(a_{rs(t-1)}) + \mu + \alpha_r + \beta_s + \epsilon_{rst}} \right)
@@ -263,14 +265,14 @@ with the rate then modeled as function of each race's population in the sector $
 (\#eq:model-c1)
 \end{equation}
 
-Two additional specifications of the model for $\theta_{rs}$ are also considered.  First, the population $p_{rs}$ is given its own coefficent:
+Two additional specifications of the model for $\theta_{rs}$ are also considered.  First, the population $p_{rs}$ is given its own coefficient:
 
 \begin{equation}
 \log(\theta_{rs}) = \gamma \log(p_{rs}) + \nu + \delta_r + \zeta_s + \upsilon_{rs}
 (\#eq:model-c2)
 \end{equation}
 
-Second, each sector's log median income $z_{2s}$ and proportion of the population with at least a four-year degree $z_{3s}$ are included as predictors:
+Second, each sector's median income $z_{2s}$ and proportion of the population with at least a four-year degree $z_{3s}$ are included as predictors:
 
 \begin{equation}
 \log(\theta_{rs}) = \log(p_{rs}) + \nu + \delta_r + \zeta_s + \phi z_{2s} + \psi z_{3s} + \upsilon_{rs}
@@ -298,7 +300,7 @@ The models are fit using $\texttt{Stan}$ with the following normal priors:
 \end{split}
 \end{equation*}
 
-where $\sigma_{\alpha}$, $\sigma_{\beta}$, and $\sigma_{\epsilon}$ represent the variation in the parameters for race, sector, and overdispersion respectively.  A similar set of priors are used for the approahces which explicitly model $\theta_{rs}$:
+where $\sigma_{\alpha}$, $\sigma_{\beta}$, and $\sigma_{\epsilon}$ represent the variation in the parameters for race, sector, and overdispersion respectively.  A similar set of priors are used for the approaches which explicitly model $\theta_{rs}$:
 
 \begin{equation*}
 \begin{split}
@@ -333,13 +335,6 @@ labs <- list(
   r = c('A', 'B', 'I', 'W'),
   s = LETTERS[2:23][-c(7, 8, 15, 19, 21)]
 )
-```
-
-```{r rhat, fig.width = 5, fig.height = 4}
-# dat <- map_dfr(m, extract_rhat)
-# p <- ggplot(dat) +
-#   geom_histogram(aes(rhat, colour = param, fill = model))
-# p
 ```
 
 ```{r table-data}
@@ -409,6 +404,22 @@ knitr::kable(
   )
 ```
 
+In the models for $y_{rst}$, the race and sector coefficients are considered relative to their mean by making the following adjustments:
+
+\begin{equation*}
+\begin{split}
+\alpha_r^{adj} &= \alpha_r - \bar \alpha \\
+\beta_s^{adj} &= \beta_s - \bar \beta \\
+\mu^{adj} &= \mu + \bar \alpha + \bar \beta
+\end{split}
+\end{equation*}
+
+Posterior estimates are presented in Table 3.1.
+
+With the exception of \@ref(eq:model-b2), the estimates of $\mu^{adj}$ indicate that prior to considering the race and sector effects, on average, the stop rates are approximately $e^{-0.66}$ or 50% lower than the prior year's arrest rates.  Including the proportion of the sector's population that is black has no discernible impact on the model as $\rho$ is indistinguishable from zero.  
+
+Race and sector effects -- expressed as $e^{\alpha_r}$ and $e^{\beta_s}$ are presented below:
+
 ```{r plots-one, cache = T, fig.width = 10, fig.height = 4}
 alpha <- map_dfr(m, extract_pars, pars = 'alpha', adjust = T, labs = labs$r)
 alpha$group <- 'Race'
@@ -432,6 +443,8 @@ p <- ggplot(dat, aes(label, exp(mean), colour = model)) +
 p
 ```
 
+where the points indicate the posterior means and the error bars indicate the 95% HPD intervals.  The natural point of comparison here is the value one which would indicate that relative stops were not higher or lower than the prior year's arrests would suggest.  From the graph one can see that Asians and blacks are stopped relatively less, Alaska Natives and American Indians are stopped relatively more (noticeably so!), while stops of whites are consistent with the average pattern observed between stops and arrests (i.e. a 50% difference).
+
 ```{r table-two}
 knitr::kable(
   tab_dat[c(2, 3, 5:6, 9:11), c(11, 5:10)],
@@ -441,6 +454,22 @@ knitr::kable(
   caption = 'Estimates and standard errors for the Poisson regression model of $\\theta_{rs}$'
   )
 ```
+
+In the models for $\theta_{rst}$, the race and sector coefficients are also considered relative to their mean by making the similar adjustments:
+
+\begin{equation*}
+\begin{split}
+\delta_r^{adj} &= \delta_r - \bar \delta \\
+\zeta_s^{adj} &= \zeta_s - \bar \zeta \\
+\nu^{adj} &= \nu + \bar \delta + \bar \zeta
+\end{split}
+\end{equation*}
+
+Posterior estimates are presented in Table 3.2.
+
+Exluding models that included $\gamma$, the estimates of $\nu^{adj}$ indicate that prior to considering the race and sector effects, on average, the arrest rates correspond to approximately $e^{-3.90}$ or 2% of the sector's population.  Higher median income is associated with a lower true crime rate; the posterior mean for the coefficient suggests that there is a 33% reduction in the crime rate when median income changes from approximately \$47,000 to \$76,000.  The proportion of the sector's population with a four-year degree is positively associated with the true crime rate although this value is not distinguishable from zero.  
+
+Race and sector effects -- again, expressed as $e^{\delta_r}$ and $e^{\zeta_s}$ are presented below:
 
 ```{r plots-two, cache = T, fig.width = 10, fig.height = 4}
 delta <- map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'delta', adjust = T, labs = labs$r)
@@ -464,6 +493,8 @@ p <- ggplot(dat, aes(label, exp(mean), colour = model)) +
   labs(x = '', y = 'Rate of crimes relative to population')
 p
 ```
+
+Once again, the natural point of comparison here is the value one.  However, in this case a value of one indicates that the relative (and inferred) crime rate in the sector is not higher or lower given the sector's population.  With respect to race, the graph is consistent with what the previous plots illustrated: that blacks are overrepresented in crime.  To a lesser extent this also true of Alaska Natives and American Indians.  Asians and whites are underrepresented.  With respect to sector, one can see that in some cases relative crimes also noticeably higher.  In paritcular, this is true for sectors K, M, and O which correspond to the downtown/South Seattle corridor.  This is not surprising given that these sectors have both higharrests rates and low resident populations.
 
 ```{r sigma, cache = T, fig.width = 10, fig.height = 4}
 # dat <- rbind(
@@ -497,17 +528,17 @@ theta <- map_dfr(str_subset(m, 'c|d'), extract_pars, pars = 'theta')
 theta$sector <- map(labs$s, rep, 4) %>% unlist()
 theta$race <- rep(labs$r, 17)
 
-p <- ggplot(theta, aes(sector, mean, colour = model)) +
-  geom_point(
-    position = position_dodge(width = 0.5)
-    ) +
-  geom_errorbar(
-    aes(ymin = lower, ymax = upper),
-    position = position_dodge(width = 0.5),
-    width = 0.2
-    ) +
-  facet_wrap(~race, scales = 'free')
-p
+# p <- ggplot(theta, aes(sector, mean, colour = model)) +
+#   geom_point(
+#     position = position_dodge(width = 0.5)
+#     ) +
+#   geom_errorbar(
+#     aes(ymin = lower, ymax = upper),
+#     position = position_dodge(width = 0.5),
+#     width = 0.2
+#     ) +
+#   facet_wrap(~race, scales = 'free')
+# p
 ```
 
 ```{r pp-stops, cache = T, fig.width = 10, fig.height = 8}
@@ -610,14 +641,17 @@ tb_arrests <- table(dat$model, dat$b > dat$lower & dat$b < dat$upper)
 # p
 ```
 
-```{r classify}
+Finally, one can compare the observed stops and arrests with what the model would predict using simulation.  Classification rates -- or the proportion of $y_{rst}$ and $a_{rst}$ are summarized in Table 3.3 below:
+
+```{r tab-class}
 dat <- tibble(
   model = m,
-  a1 = 100 * tb_stops[, 'TRUE'] / 136,
-  a2 = c(NA, NA, NA, 100 * tb_arrests[, 'TRUE'] / 136)
+  y = 100 * tb_stops[, 'TRUE'] / 136,
+  a = c(NA, NA, NA, 100 * tb_arrests[, 'TRUE'] / 136)
 )
 dat %<>% gather(variable, value, -model)
 dat %<>% spread(model, value)
+dat %<>% arrange(desc(variable))
 dat$variable <- c('$y_{rst}$', '$a_{rst}$')
 
 knitr::kable(
@@ -626,6 +660,6 @@ knitr::kable(
   row.names = F,
   col.names = c('', str_c('2', 1:9, sep = '.')),
   digits = 1,
-  caption = 'Classification rates (95% HPD intervals of the simulated model contain observed data)'
+  caption = 'Classification rates'
   )
 ```

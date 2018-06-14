@@ -1,4 +1,4 @@
-# median income - pareto / linear interpolation
+# ----- median income - pareto / linear interpolation ---------------------
 
 inc_int <- function(inc_cols, type = 'pareto') {
   

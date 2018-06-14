@@ -1,21 +1,14 @@
-# ------------------------------------------------------------------------------
-# preample
-# ------------------------------------------------------------------------------
-library(RSocrata)
-library(rstan)
-load_tidy()
+# ----- preample ----------------------------------------------------------
 
-# databases
-db <- src_sqlite('rsji.sqlite', create = F)
-db_gis <- 'rsji_gis.sqlite'
+library(rstan)
 
 # stan options
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-# ------------------------------------------------------------------------------
-# 2016 terry data
-# ------------------------------------------------------------------------------
+
+# ----- 2016 terry data ---------------------------------------------------
+
 terry_in <- tbl(db, 'terry') %>% collect()
 
 terry <- terry_in %>%
@@ -36,9 +29,9 @@ terry$subjectrace %<>% factor()
 levels(terry$subjectrace) <- c('I', 'A', 'B', 'H', 'W')
 terry$subjectrace <- fct_rev(terry$subjectrace)
 
-# ------------------------------------------------------------------------------
-# 2015 nibr/sibr matched records
-# ------------------------------------------------------------------------------
+
+# ----- 2015 nibr/sibr matched records ------------------------------------
+
 mibr_in <- tbl(db, 'mibr') %>% collect()
 
 mibr <- mibr_in %>%
@@ -81,9 +74,9 @@ dat %<>%
     p.yl = lag(p.y, order_by = `year(dt)`)
   )
 
-# ------------------------------------------------------------------------------
-# glm - poission regression
-# ------------------------------------------------------------------------------
+
+# ----- glm:poisson regression --------------------------------------------
+
 reg1 <- glm(
   n.x ~ 1,
   offset = log(n.yl),
@@ -108,10 +101,12 @@ reg3 <- glm(
 )
 summary(reg3)
 
-# ------------------------------------------------------------------------------
-# stan - poission regression
-# ------------------------------------------------------------------------------
+
+# ----- stan: poisson regression ------------------------------------------
+
+# initial value function
 inits <- function(chain) {
+  
   set.seed(10 ^ chain)
   
   # model a
@@ -141,6 +136,7 @@ inits <- function(chain) {
   ))
   
   return(x)
+  
 }
 
 z <- filter(dat, `year(dt)` == 2016 & subjectrace != 'H')

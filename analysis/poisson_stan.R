@@ -1,20 +1,14 @@
-# ------------------------------------------------------------------------------
-# preample
-# ------------------------------------------------------------------------------
-library(rstan)
-load_tidy()
+# ----- preample ----------------------------------------------------------
 
-# databases
-db <- src_sqlite('rsji.sqlite', create = F)
-db_gis <- 'rsji_gis.sqlite'
+library(rstan)
 
 # stan options
 rstan_options(auto_write = TRUE)
 options(mc.cores = parallel::detectCores())
 
-# ------------------------------------------------------------------------------
-# 2015 acs data
-# ------------------------------------------------------------------------------
+
+# ----- 2015 acs data -----------------------------------------------------
+
 acs <- tbl(db, 'acs_sector') %>% collect()
 
 # convert race, hispanic, and education to percentages
@@ -56,9 +50,9 @@ sec %<>%
   ) %>%
   arrange(sector, subjectrace)
 
-# ------------------------------------------------------------------------------
-# 2016 terry data
-# ------------------------------------------------------------------------------
+
+# ----- 2016 terry data ---------------------------------------------------
+
 terry_in <- tbl(db, 'terry') %>% collect()
 
 terry <- terry_in %>%
@@ -75,9 +69,9 @@ terry <- terry_in %>%
   ) %>%
   ungroup()
 
-# ------------------------------------------------------------------------------
-# 2015 nibr/sibr matched records
-# ------------------------------------------------------------------------------
+
+# ----- 2015 nibr/sibr matched records ------------------------------------
+
 mibr_in <- tbl(db, 'mibr') %>% collect()
 
 mibr <- mibr_in %>%
@@ -94,9 +88,8 @@ mibr <- mibr_in %>%
   ) %>%
   ungroup()
 
-# ------------------------------------------------------------------------------
-# plot to look at rates over time
-# ------------------------------------------------------------------------------
+
+# ----- plot to look at rates over time -----------------------------------
 
 # organize race as factor
 # terry$subjectrace %<>% factor()
@@ -115,9 +108,9 @@ ggplot(mibr) +
     ) +
   facet_wrap(~sector, nrow = 6, ncol = 3)
 
-# ------------------------------------------------------------------------------
-# join data
-# ------------------------------------------------------------------------------
+
+# ----- join data ---------------------------------------------------------
+
 dat <- full_join(
   terry, mibr, 
   by = c('year(dt)', 'sector', 'subjectrace'),
@@ -139,9 +132,10 @@ dat %<>%
     SR = interaction(sector, subjectrace, lex.order = T)
     )
 
-# ------------------------------------------------------------------------------
-# stan - poission regression
-# ------------------------------------------------------------------------------
+
+# ----- stan: poisson regression ------------------------------------------
+
+# initial value function
 inits <- function(chain, N = NULL, S = NULL, R = NULL) {
   set.seed(10 ^ chain)
   
@@ -229,7 +223,7 @@ stan_fit <- function(m) {
 }
 stan_fit_q <- quietly(stan_fit)
 
-m <- c('a1', 'a2', 'a3', 'b1', 'b2', 'b3', 'c1', 'c2', 'c3', 'd1', 'd2', 'd3')
+m <- map(c(letters[1:4]), str_c, 1:3) %>% unlist()
 fit <- list()
 for (i in seq_along(m)) {
   fit[[i]] <- stan_fit_q(m[i])
@@ -241,6 +235,3 @@ fit$data <- stan_dat
 
 # save
 save(fit, file = 'analysis/poisson_stan_fits_nu.Rda')
-
-xxx <- stan_fit_q('c3')
-yyy <- stan_fit_q('d3')
