@@ -1,6 +1,9 @@
-*.Rproj.user
-*.Rhistory
 *.RData
+*.Rda
+*.Rhistory
+*.Rprofile
+*.Rproj.user
+*.Rproj
 *.Ruserdata
 *.DS_Store
 *.sqlite
