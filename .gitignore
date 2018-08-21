@@ -9,5 +9,3 @@
 *.sqlite
 /docs
 /raw
-/rmd/cache
-.Rproj.user

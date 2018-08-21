@@ -1,0 +1,15 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE
+  )
+```
+
+## Overview
+
+See my blog post [Seattle Terry Stops](https://johnson-shuffle.github.io/post/seattle-terry-stops/) for more information about this code.
